@@ -1,0 +1,813 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Four different approaches to cleaning data</title>
+  <style>
+    :root {
+      --bg: #f5f6f8;
+      --surface: #ffffff;
+      --surface-alt: #eef4f1;
+      --ink: #181a1f;
+      --muted: #626a73;
+      --line: #d6dbe1;
+      --line-strong: #526580;
+      --line-pass: #c7ced7;
+      --accent: #26736c;
+      --accent-2: #8a4f2c;
+      --byte-w: 4px;
+      --word-h: 36px;
+      --stack-w: 128px;
+      --stack-pad: 6px;
+      --op-lane: 64px;
+      color-scheme: light;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      min-width: 320px;
+      background: var(--bg);
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid #1b5d57;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 650;
+      min-height: 36px;
+      padding: 0 14px;
+    }
+
+    button:focus-visible {
+      outline: 3px solid rgba(38, 115, 108, 0.28);
+      outline-offset: 2px;
+    }
+
+    .app-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 20px clamp(16px, 3vw, 32px);
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.15;
+      font-weight: 760;
+    }
+
+    .header-copy {
+      display: grid;
+      gap: 4px;
+    }
+
+    .header-copy p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 760px;
+    }
+
+    main {
+      display: grid;
+      gap: 0;
+    }
+
+    .diagram {
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .diagram:nth-child(even) {
+      background: var(--surface-alt);
+    }
+
+    .diagram-inner {
+      padding: 18px clamp(16px, 3vw, 32px) 22px;
+    }
+
+    .flow-scroll {
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding-bottom: 8px;
+      scrollbar-color: var(--line-strong) transparent;
+    }
+
+    .flow {
+      display: flex;
+      align-items: flex-start;
+      gap: 0;
+      min-width: max-content;
+      padding: 2px 4px 6px 0;
+    }
+
+    .stack-column {
+      flex: 0 0 calc(var(--stack-w) + var(--stack-pad) + var(--stack-pad));
+      padding-top: var(--op-lane);
+      position: relative;
+      z-index: 2;
+    }
+
+    .stack-shell {
+      display: grid;
+      gap: 9px;
+      width: calc(var(--stack-w) + var(--stack-pad) + var(--stack-pad));
+      padding: 0 var(--stack-pad);
+      position: relative;
+    }
+
+    .transition {
+      flex: 0 0 80px;
+      height: 136px;
+      position: relative;
+      isolation: isolate;
+      z-index: 1;
+      overflow: visible;
+    }
+
+    .connector-svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      color: var(--line-strong);
+      overflow: visible;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .connector-path {
+      fill: none;
+      stroke: var(--line-strong);
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .connector-path-passthrough {
+      stroke: var(--line-pass);
+      stroke-width: 1.5;
+      opacity: 0.9;
+    }
+
+    .opcode {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      z-index: 1;
+      transform: translateX(-50%);
+      min-width: 66px;
+      border: 1px solid #38434f;
+      border-radius: 5px;
+      background: #252a32;
+      color: #f8f9fb;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 15px;
+      font-weight: 720;
+      line-height: 1;
+      padding: 9px 10px;
+      text-align: center;
+      box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
+    }
+
+    .stack-item {
+      display: grid;
+      gap: 4px;
+      width: var(--stack-w);
+    }
+
+    .word {
+      display: flex;
+      width: var(--stack-w);
+      height: var(--word-h);
+      overflow: hidden;
+      border: 1px solid #20242b;
+      border-radius: 4px;
+      background: #101216;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    }
+
+    .byte {
+      flex: 0 0 var(--byte-w);
+      height: 100%;
+      border-right: 1px solid rgba(0, 0, 0, 0.2);
+    }
+
+    .byte:last-child {
+      border-right: 0;
+    }
+
+    .item-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 11px;
+      line-height: 1.1;
+    }
+
+    .item-name {
+      flex: 0 0 auto;
+      color: #3b444f;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .item-hex {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .kind-slot .item-name {
+      color: var(--accent);
+    }
+
+    .kind-push .item-name {
+      color: var(--accent-2);
+    }
+
+    .kind-result .item-name {
+      color: #405f91;
+    }
+
+    @media (max-width: 720px) {
+      :root {
+        --byte-w: 3.5px;
+        --stack-w: 112px;
+        --word-h: 34px;
+      }
+
+      .app-header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      button {
+        width: 100%;
+      }
+
+      .transition {
+        flex-basis: 72px;
+      }
+
+      .opcode {
+        min-width: 60px;
+        padding-inline: 7px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-copy">
+      <h1>Four different approaches to cleaning data</h1>
+      <p>The EVM works with 32-byte stack words, so narrower values such as addresses can carry unwanted high bytes. These high bytes may need to be removed before use.</p>
+    </div>
+    <button id="regenerate" type="button">Regenerate slots</button>
+  </header>
+
+  <main id="diagrams" aria-live="polite"></main>
+
+  <script>
+    const WORD_BITS = 256n;
+    const WORD_SIZE = 32;
+    const WORD_MOD = 1n << WORD_BITS;
+    const WORD_MASK = WORD_MOD - 1n;
+
+    const programs = [
+      {
+        title: "PUSH20 AND",
+        ops: [
+          { name: "PUSH20", bytes: Array(20).fill(0xff) },
+          { name: "AND" }
+        ]
+      },
+      {
+        title: "PUSH1 PUSH1 PUSH1 SHL SUB AND",
+        ops: [
+          { name: "PUSH1", bytes: [0x01] },
+          { name: "PUSH1", bytes: [0x01] },
+          { name: "PUSH1", bytes: [0xa0] },
+          { name: "SHL" },
+          { name: "SUB" },
+          { name: "AND" }
+        ]
+      },
+      {
+        title: "PUSH1 SHL PUSH1 SHR",
+        ops: [
+          { name: "PUSH1", bytes: [0x60] },
+          { name: "SHL" },
+          { name: "PUSH1", bytes: [0x60] },
+          { name: "SHR" }
+        ]
+      },
+      {
+        title: "PUSH1 MLOAD AND",
+        ops: [
+          { name: "PUSH1", bytes: [0x94] },
+          { name: "MLOAD" },
+          { name: "AND" }
+        ]
+      }
+    ];
+
+    const diagramsEl = document.querySelector("#diagrams");
+    const regenerateEl = document.querySelector("#regenerate");
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const opcodeEffects = {
+      AND: { inputs: 2, outputs: 1 },
+      SHL: { inputs: 2, outputs: 1 },
+      SHR: { inputs: 2, outputs: 1 },
+      SUB: { inputs: 2, outputs: 1 },
+      MLOAD: { inputs: 1, outputs: 1 }
+    };
+    let connectorId = 0;
+    let stackItemId = 0;
+
+    regenerateEl.addEventListener("click", renderAll);
+    window.addEventListener("resize", scheduleConnectorUpdate);
+    renderAll();
+
+    function renderAll() {
+      const slot = randomWord();
+      connectorId = 0;
+      stackItemId = 0;
+      diagramsEl.replaceChildren(
+        ...programs.map((program, index) => {
+          const run = runProgram(program, slot);
+          return renderDiagram(program, run, index);
+        })
+      );
+      scheduleConnectorUpdate();
+    }
+
+    function runProgram(program, initialSlot) {
+      let stack = [createStackItem(initialSlot, "slot", "slot")];
+      const snapshots = [cloneStack(stack)];
+
+      for (const op of program.ops) {
+        stack = execute(op, stack);
+        snapshots.push(cloneStack(stack));
+      }
+
+      return { snapshots, finalStack: snapshots[snapshots.length - 1] };
+    }
+
+    function execute(op, stack) {
+      const next = cloneStack(stack);
+
+      if (op.name.startsWith("PUSH")) {
+        next.unshift(createStackItem(bytesToWord(op.bytes), "push", "push"));
+        return next;
+      }
+
+      if (op.name === "AND") {
+        const a = next.shift();
+        const b = next.shift();
+        next.unshift(createStackItem((a.value & b.value) & WORD_MASK, "and", "result"));
+        return next;
+      }
+
+      if (op.name === "SHL") {
+        const shift = Number(next.shift().value);
+        const val = next.shift().value;
+        next.unshift(createStackItem(
+          shift >= 256 ? 0n : (val << BigInt(shift)) & WORD_MASK,
+          "shl",
+          "result"
+        ));
+        return next;
+      }
+
+      if (op.name === "SHR") {
+        const shift = Number(next.shift().value);
+        const val = next.shift().value;
+        next.unshift(createStackItem(
+          shift >= 256 ? 0n : (val >> BigInt(shift)) & WORD_MASK,
+          "shr",
+          "result"
+        ));
+        return next;
+      }
+
+      if (op.name === "SUB") {
+        const a = next.shift().value;
+        const b = next.shift().value;
+        next.unshift(createStackItem((a - b + WORD_MOD) & WORD_MASK, "sub", "result"));
+        return next;
+      }
+
+      if (op.name === "MLOAD") {
+        const offset = Number(next.shift().value);
+        next.unshift(createStackItem(mload(offset), "mload", "result"));
+        return next;
+      }
+
+      throw new Error("Unsupported opcode: " + op.name);
+    }
+
+    function mload(offset) {
+      const bytes = [];
+      for (let i = 0; i < WORD_SIZE; i += 1) {
+        bytes.push(offset + i >= 0xa0 ? 0xff : 0x00);
+      }
+      return bytesToWord(bytes);
+    }
+
+    function renderDiagram(program, run, index) {
+      const section = el("section", "diagram");
+      const inner = el("div", "diagram-inner");
+      const scroll = el("div", "flow-scroll");
+      const flow = el("div", "flow");
+
+      run.snapshots.forEach((snapshot, snapshotIndex) => {
+        flow.append(renderStack(snapshot));
+        if (snapshotIndex < program.ops.length) {
+          flow.append(renderTransition(program.ops[snapshotIndex]));
+        }
+      });
+
+      scroll.append(flow);
+      inner.append(scroll);
+      section.append(inner);
+      return section;
+    }
+
+    function renderStack(stack) {
+      const column = el("div", "stack-column");
+      const shell = el("div", "stack-shell");
+      stack.forEach((item) => shell.append(renderStackItem(item)));
+      column.append(shell);
+      return column;
+    }
+
+    function renderStackItem(item) {
+      const itemEl = el("div", `stack-item kind-${item.kind}`);
+      const wordEl = el("div", "word");
+      const bytes = wordToBytes(item.value);
+      wordEl.dataset.stackId = item.id;
+      wordEl.title = hexWord(item.value);
+      wordEl.setAttribute("aria-label", `${item.label} ${hexWord(item.value)}`);
+
+      bytes.forEach((byte) => {
+        const byteEl = el("span", "byte");
+        byteEl.style.backgroundColor = byteColor(byte);
+        wordEl.append(byteEl);
+      });
+
+      const meta = el("div", "item-meta");
+      meta.append(
+        el("span", "item-name", item.label),
+        el("span", "item-hex", shortHex(item.value))
+      );
+
+      itemEl.append(wordEl, meta);
+      return itemEl;
+    }
+
+    function byteColor(byte) {
+      if (byte === 0) {
+        return "#fff";
+      }
+
+      const t = (byte - 1) / 254;
+      const lightness = 82 - (t * 52);
+      return `hsl(184, 55%, ${lightness}%)`;
+    }
+
+    function renderTransition(op) {
+      const transition = el("div", "transition");
+      const effect = operationEffect(op);
+      transition.dataset.inputs = String(effect.inputs);
+      transition.dataset.outputs = String(effect.outputs);
+      transition.append(
+        renderConnectorSvg(),
+        el("div", "opcode", op.name)
+      );
+      return transition;
+    }
+
+    function renderConnectorSvg() {
+      const svg = document.createElementNS(SVG_NS, "svg");
+      svg.setAttribute("class", "connector-svg");
+      svg.setAttribute("aria-hidden", "true");
+      svg.setAttribute("focusable", "false");
+
+      const defs = document.createElementNS(SVG_NS, "defs");
+      const markerId = `arrowhead-${connectorId}`;
+      connectorId += 1;
+      svg.setAttribute("data-marker-id", markerId);
+
+      const marker = document.createElementNS(SVG_NS, "marker");
+      marker.setAttribute("id", markerId);
+      marker.setAttribute("markerWidth", "7");
+      marker.setAttribute("markerHeight", "7");
+      marker.setAttribute("refX", "6");
+      marker.setAttribute("refY", "3.5");
+      marker.setAttribute("orient", "auto");
+      marker.setAttribute("markerUnits", "userSpaceOnUse");
+
+      const tip = document.createElementNS(SVG_NS, "path");
+      tip.setAttribute("d", "M 1 1 L 6 3.5 L 1 6");
+      tip.setAttribute("fill", "none");
+      tip.setAttribute("stroke", "currentColor");
+      tip.setAttribute("stroke-width", "3");
+      tip.setAttribute("stroke-linecap", "round");
+      tip.setAttribute("stroke-linejoin", "round");
+      tip.setAttribute("vector-effect", "non-scaling-stroke");
+
+      marker.append(tip);
+      defs.append(marker);
+      svg.append(defs);
+      return svg;
+    }
+
+    function scheduleConnectorUpdate() {
+      window.requestAnimationFrame(updateConnectors);
+    }
+
+    function updateConnectors() {
+      document.querySelectorAll(".transition").forEach((transition) => {
+        const svg = transition.querySelector(".connector-svg");
+        const opcode = transition.querySelector(".opcode");
+        const inputStack = transition.previousElementSibling;
+        const outputStack = transition.nextElementSibling;
+
+        if (!svg || !opcode || !inputStack || !outputStack) {
+          return;
+        }
+
+        svg.querySelectorAll(".connector-path").forEach((path) => path.remove());
+
+        const transitionBox = transition.getBoundingClientRect();
+        const opcodeBox = opcode.getBoundingClientRect();
+        const inputCount = Number(transition.dataset.inputs || 0);
+        const outputCount = Number(transition.dataset.outputs || 0);
+        const allInputWords = Array.from(inputStack.querySelectorAll(".word"));
+        const allOutputWords = Array.from(outputStack.querySelectorAll(".word"));
+        const inputWords = allInputWords.slice(0, inputCount);
+        const outputWords = allOutputWords.slice(0, outputCount);
+        const opcodeAnchorY = opcodeBox.bottom - transitionBox.top;
+        const opcodeLeft = {
+          x: opcodeBox.left - transitionBox.left + opcodeBox.width * 0.25,
+          y: opcodeAnchorY
+        };
+        const opcodeRight = {
+          x: opcodeBox.left - transitionBox.left + opcodeBox.width * 0.75,
+          y: opcodeAnchorY
+        };
+
+        appendPassthroughConnectors(svg, allInputWords, allOutputWords, transitionBox);
+
+        inputWords.forEach((word) => {
+          const wordBox = word.getBoundingClientRect();
+          const start = {
+            x: wordBox.right - transitionBox.left,
+            y: wordBox.top - transitionBox.top + wordBox.height / 2
+          };
+          appendConnector(svg, [
+            start,
+            { x: opcodeLeft.x, y: start.y },
+            opcodeLeft
+          ]);
+        });
+
+        outputWords.forEach((word) => {
+          const wordBox = word.getBoundingClientRect();
+          const end = {
+            x: wordBox.left - transitionBox.left,
+            y: wordBox.top - transitionBox.top + wordBox.height / 2
+          };
+          appendConnector(svg, [
+            opcodeRight,
+            { x: opcodeRight.x, y: end.y },
+            end
+          ]);
+        });
+      });
+    }
+
+    function appendConnector(svg, points) {
+      appendPath(svg, points, {
+        className: "connector-path",
+        marker: true,
+        radius: 8
+      });
+    }
+
+    function appendPassthroughConnectors(svg, inputWords, outputWords, transitionBox) {
+      const outputsById = new Map(
+        outputWords.map((word) => [word.dataset.stackId, word])
+      );
+
+      inputWords.forEach((word) => {
+        const outputWord = outputsById.get(word.dataset.stackId);
+        if (!word.dataset.stackId || !outputWord) {
+          return;
+        }
+
+        const inputBox = word.getBoundingClientRect();
+        const outputBox = outputWord.getBoundingClientRect();
+        const start = {
+          x: inputBox.right - transitionBox.left,
+          y: inputBox.top - transitionBox.top + inputBox.height / 2
+        };
+        const end = {
+          x: outputBox.left - transitionBox.left,
+          y: outputBox.top - transitionBox.top + outputBox.height / 2
+        };
+        const leftLaneX = Math.max(start.x + 18, transitionBox.width * 0.26);
+        const rightLaneX = Math.min(end.x - 18, transitionBox.width * 0.74);
+
+        appendPath(svg, [
+          start,
+          { x: leftLaneX, y: start.y },
+          { x: rightLaneX, y: end.y },
+          end
+        ], {
+          className: "connector-path connector-path-passthrough",
+          marker: false,
+          radius: 10
+        });
+      });
+    }
+
+    function appendPath(svg, points, options) {
+      const path = document.createElementNS(SVG_NS, "path");
+      path.setAttribute("class", options.className);
+      path.setAttribute("d", roundedPolylinePath(points, options.radius));
+      if (options.marker) {
+        path.setAttribute("marker-end", `url(#${svg.getAttribute("data-marker-id")})`);
+      }
+      svg.append(path);
+    }
+
+    function roundedPolylinePath(points, radius) {
+      if (points.length === 0) {
+        return "";
+      }
+
+      const commands = [`M ${formatNumber(points[0].x)} ${formatNumber(points[0].y)}`];
+
+      for (let i = 1; i < points.length; i += 1) {
+        const current = points[i];
+        const previous = points[i - 1];
+        const next = points[i + 1];
+
+        if (!next) {
+          commands.push(`L ${formatNumber(current.x)} ${formatNumber(current.y)}`);
+          continue;
+        }
+
+        const before = distanceBetween(current, previous);
+        const after = distanceBetween(current, next);
+        const curve = Math.min(radius, before / 2, after / 2);
+
+        if (curve === 0) {
+          commands.push(`L ${formatNumber(current.x)} ${formatNumber(current.y)}`);
+          continue;
+        }
+
+        const entry = pointToward(current, previous, curve);
+        const exit = pointToward(current, next, curve);
+        commands.push(
+          `L ${formatNumber(entry.x)} ${formatNumber(entry.y)}`,
+          `Q ${formatNumber(current.x)} ${formatNumber(current.y)} ${formatNumber(exit.x)} ${formatNumber(exit.y)}`
+        );
+      }
+
+      return commands.join(" ");
+    }
+
+    function pointToward(from, to, distance) {
+      const total = distanceBetween(from, to);
+      if (total === 0) {
+        return { ...from };
+      }
+      const dx = ((to.x - from.x) / total) * distance;
+      const dy = ((to.y - from.y) / total) * distance;
+      return {
+        x: from.x + dx,
+        y: from.y + dy
+      };
+    }
+
+    function distanceBetween(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
+
+    function formatNumber(value) {
+      return Number(value.toFixed(2));
+    }
+
+    function cloneStack(stack) {
+      return stack.map((item) => ({ ...item }));
+    }
+
+    function createStackItem(value, label, kind) {
+      stackItemId += 1;
+      return {
+        id: `stack-item-${stackItemId}`,
+        value,
+        label,
+        kind
+      };
+    }
+
+    function operationEffect(op) {
+      if (op.name.startsWith("PUSH")) {
+        return { inputs: 0, outputs: 1 };
+      }
+
+      const effect = opcodeEffects[op.name];
+      if (!effect) {
+        throw new Error("Unsupported opcode effect: " + op.name);
+      }
+
+      return effect;
+    }
+
+    function randomWord() {
+      const bytes = new Uint8Array(WORD_SIZE);
+      if (window.crypto && typeof window.crypto.getRandomValues === "function") {
+        let index = 0;
+        const randomBytes = new Uint8Array(WORD_SIZE);
+        while (index < WORD_SIZE) {
+          window.crypto.getRandomValues(randomBytes);
+          randomBytes.forEach((byte) => {
+            if (byte >= 0x20 && index < WORD_SIZE) {
+              bytes[index] = byte;
+              index += 1;
+            }
+          });
+        }
+      } else {
+        for (let i = 0; i < WORD_SIZE; i += 1) {
+          bytes[i] = 0x20 + Math.floor(Math.random() * 0xe0);
+        }
+      }
+      return bytesToWord(Array.from(bytes));
+    }
+
+    function bytesToWord(bytes) {
+      return bytes.reduce((value, byte) => ((value << 8n) | BigInt(byte)) & WORD_MASK, 0n);
+    }
+
+    function wordToBytes(value) {
+      const bytes = Array(WORD_SIZE).fill(0);
+      let remaining = value & WORD_MASK;
+      for (let i = WORD_SIZE - 1; i >= 0; i -= 1) {
+        bytes[i] = Number(remaining & 0xffn);
+        remaining >>= 8n;
+      }
+      return bytes;
+    }
+
+    function hexWord(value) {
+      return "0x" + (value & WORD_MASK).toString(16).padStart(64, "0");
+    }
+
+    function shortHex(value) {
+      const full = hexWord(value);
+      return `${full.slice(0, 10)}...${full.slice(-8)}`;
+    }
+
+    function el(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) {
+        node.className = className;
+      }
+      if (text !== undefined) {
+        node.textContent = text;
+      }
+      return node;
+    }
+  </script>
+</body>
+</html>
